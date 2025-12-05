@@ -1,0 +1,22 @@
+{
+    "max_lr":1e-4,
+    "wd":1e-4,
+
+    "epochs":30,
+    "pct_start":0.15,
+    "div_factor":10.0,
+    "final_div_factor":100,
+
+    "dataset_dir":"dataset",
+    "img_size_h":1024,
+    "img_size_w":1280,
+    "difficulty":0.1,
+    "batch_size":8,
+    "val_batch_size":16,
+
+    "max_norm":1.0,
+
+    "xfeat_weights":"weights\\xfeat.pt",
+    "matcher_weights":"weights\\xfeat-lighterglue.pt"
+
+}
