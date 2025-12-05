@@ -52,15 +52,14 @@ def configure_dataloaders(device, dir, img_size, difficulty, batch_size, val_bat
     test_dataset  = MatcherDataset(device, dir, img_size, difficulty, mode="test")
 
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True
+        train_dataset, batch_size=batch_size, shuffle=True, num_workers=4
     )
     val_loader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=val_batch_size, shuffle=False, num_workers=2, pin_memory=True
+        val_dataset, batch_size=val_batch_size, shuffle=False, num_workers=2
     )
     test_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size=len(test_dataset), shuffle=False, num_workers=2, pin_memory=True
+        test_dataset, batch_size=len(test_dataset), shuffle=False, num_workers=2
     )
-
     return train_loader, val_loader, test_loader
 
 def configurate_matcher(weights_path, device):
@@ -178,10 +177,9 @@ def train(epochs, matcher, xfeat, train_loader, val_loader, config, loss_func, o
         }
         return gt
 
-    def __collect_xfeat_to_batch(xfeat_output, W, H, B):
+    def __collect_xfeat_to_batch(xfeat_output, W, H, B, device):
         kps = []
         dss = []
-        sizes = []
 
         lengths = [sample['keypoints'].shape[0] for sample in xfeat_output]
         M = min(lengths)
@@ -195,11 +193,10 @@ def train(epochs, matcher, xfeat, train_loader, val_loader, config, loss_func, o
 
             kps.append(k)
             dss.append(d)
-            sizes.append(torch.tensor([W1, H1], dtype=torch.float32, device=k.device))
         
         keypoints   = torch.stack(kps, dim=0)   # [B, M, 2]
-        descriptors = torch.stack(dss, dim=0)   # [B, M, 64]
-        image_size = torch.tensor([[W, H]] * B, dtype=torch.float32, device=img.device) # [B, 2(W, H)]
+        descriptors = torch.stack(dss, dim=0)   # [B, M, D]
+        image_size = torch.tensor([[W, H]] * B, dtype=torch.float32, device=device)
 
         return keypoints, descriptors, image_size
 
@@ -212,15 +209,17 @@ def train(epochs, matcher, xfeat, train_loader, val_loader, config, loss_func, o
         for  img, res, (warp, mask) in tqdm(train_loader):
             img = img.to(device)
             res = res.to(device)
+            warp = warp.to(device)
+            mask = mask.to(device)          
 
             with torch.no_grad():   
                 xfeat_output_0 = xfeat.detectAndCompute(img, top_k=4096)
                 xfeat_output_1 = xfeat.detectAndCompute(res, top_k=4096)
                 
-            keypoints_0, descriptors_0, image_size_0 = __collect_xfeat_to_batch(xfeat_output_0, W1, H1, B)
-            keypoints_1, descriptors_1, image_size_1 = __collect_xfeat_to_batch(xfeat_output_1, W2, H2, B)
+            keypoints_0, descriptors_0, image_size_0 = __collect_xfeat_to_batch(xfeat_output_0, W1, H1, B, device)
+            keypoints_1, descriptors_1, image_size_1 = __collect_xfeat_to_batch(xfeat_output_1, W2, H2, B, device)
 
-            gt = __compute_gt(( keypoints_0, descriptors_0, image_size_0), (keypoints_1, descriptors_1, image_size_1), warp, mask) 
+            gt = __compute_gt(keypoints_0, keypoints_1, warp, mask, 3) 
 
             data = {
                 'keypoints0': keypoints_0.to(device),
@@ -230,7 +229,8 @@ def train(epochs, matcher, xfeat, train_loader, val_loader, config, loss_func, o
                 'keypoints1': keypoints_1.to(device),
                 'descriptors1': descriptors_1.to(device),
                 'image_size1': image_size_1,
-            }
+            }  
+
 
             optimizer.zero_grad()
 
