@@ -205,8 +205,12 @@ def train(epochs, matcher, xfeat, train_loader, val_loader, config, loss_func, o
     H1 = H2 = config['img_size_h']
     B = config['batch_size']
     for epoch in range(epochs):
+        running_loss = 0.0
+        num_batches = 0
+
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", leave=True)
         matcher.train()
-        for  img, res, (warp, mask) in tqdm(train_loader):
+        for  img, res, (warp, mask) in pbar:
             img = img.to(device)
             res = res.to(device)
             warp = warp.to(device)
@@ -247,6 +251,16 @@ def train(epochs, matcher, xfeat, train_loader, val_loader, config, loss_func, o
 
             optimizer.step()
             scheduler.step()
+
+                        # аккумулируем loss и обновляем бар
+            running_loss += loss.item()
+            num_batches += 1
+            avg_loss = running_loss / num_batches
+
+            pbar.set_postfix({
+                "loss": f"{loss.item():.4f}",
+                "avg_loss": f"{avg_loss:.4f}"
+            })
 
 if __name__ == "__main__":
     with open("config.json", "r", encoding="utf-8") as f:
