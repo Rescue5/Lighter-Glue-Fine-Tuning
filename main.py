@@ -269,3 +269,16 @@ if __name__ == "__main__":
 
         loss_conf = OmegaConf.create({"nll_balancing": 0.5, "gamma_f": 0.0})
         criterion = NLLLoss(loss_conf)
+
+        train(
+            epochs=config['epochs'],
+            matcher=matcher,
+            xfeat=xfeat,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            config=config,
+            loss_func=criterion,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            device=device
+        )
