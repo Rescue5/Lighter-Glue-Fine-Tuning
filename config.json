@@ -11,7 +11,7 @@
     "img_size_h":1024,
     "img_size_w":1280,
     "difficulty":0.1,
-    "batch_size":8,
+    "batch_size":6,
     "val_batch_size":16,
 
     "max_norm":1.0,

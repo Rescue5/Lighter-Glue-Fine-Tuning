@@ -244,10 +244,10 @@ class AugmentationPipe(nn.Module):
                             dsize = shape, padding_mode = 'zeros')
 
             #crop % of image boundaries each side to reduce invalid pixels after warps
-            low_h = int(h * self.sides_crop); low_w = int(w*self.sides_crop)
-            high_h = int(h*(1. - self.sides_crop)); high_w= int(w * (1. - self.sides_crop))
-            output = output[..., low_h:high_h, low_w:high_w]
-            x = x[..., low_h:high_h, low_w:high_w]
+            #low_h = int(h * self.sides_crop); low_w = int(w*self.sides_crop)
+            #high_h = int(h*(1. - self.sides_crop)); high_w= int(w * (1. - self.sides_crop))
+            #output = output[..., low_h:high_h, low_w:high_w]
+            #x = x[..., low_h:high_h, low_w:high_w]
 
             ##apply TPS if desired:
             #if TPS:
@@ -265,8 +265,8 @@ class AugmentationPipe(nn.Module):
 
             #    output = warp_image_tps(output, src, weights, A)
 
-            output = F.interpolate(output, self.out_resolution[::-1], mode = 'nearest')
-            x = F.interpolate(x, self.out_resolution[::-1], mode = 'nearest')
+            #output = F.interpolate(output, self.out_resolution[::-1], mode = 'nearest')
+            #x = F.interpolate(x, self.out_resolution[::-1], mode = 'nearest')
 
             mask = ~torch.all(output == 0, dim=1, keepdim=True)
             mask = mask.expand(-1,3,-1,-1)
@@ -282,19 +282,19 @@ class AugmentationPipe(nn.Module):
 
             b, c, h, w = output.shape
             #Correlated Gaussian Noise
-            if np.random.uniform() > 0.5 and self.photometric:
-                noise = F.interpolate(torch.randn_like(output)*(10/255), (h//2, w//2))
-                noise = F.interpolate(noise, (h, w), mode = 'bicubic')
-                output = torch.clip( output + noise, 0., 1.)
+            #if np.random.uniform() > 0.5 and self.photometric:
+            #    noise = F.interpolate(torch.randn_like(output)*(10/255), (h//2, w//2))
+            #    noise = F.interpolate(noise, (h, w), mode = 'bicubic')
+            #    output = torch.clip( output + noise, 0., 1.)
 
             #Random shadows
-            if np.random.uniform() > 0.6 and self.photometric:
-                noise = torch.rand((b, 1, h//64, w//64), device = self.device) * 1.3
-                noise = torch.clip(noise, 0.25, 1.0)
-                noise = F.interpolate(noise, (h, w), mode = 'bicubic')
-                noise = noise.expand(-1, 3, -1, -1)
-                output *= noise
-                output = torch.clip( output, 0., 1.)
+            #if np.random.uniform() > 0.6 and self.photometric:
+            #    noise = torch.rand((b, 1, h//64, w//64), device = self.device) * 1.3
+            #    noise = torch.clip(noise, 0.25, 1.0)
+            #    noise = F.interpolate(noise, (h, w), mode = 'bicubic')
+            #    noise = noise.expand(-1, 3, -1, -1)
+            #    output *= noise
+            #    output = torch.clip( output, 0., 1.)
 
             self.cnt+=1
 
