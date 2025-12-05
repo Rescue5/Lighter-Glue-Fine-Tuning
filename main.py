@@ -74,13 +74,109 @@ def configurate_xfeat(weights_path, device):
         return xfeat
 
 def train(epochs, matcher, xfeat, train_loader, val_loader, config, loss_func, optimizer, scheduler, device):
-    
-    def __compute_gt(xfeat_output_0, xfeat_output_1, warp, mask):
-        keypoints_0, keypoints_1 = xfeat_output_0, xfeat_output_1 # [B, 4096, 2]
-        H = warp # [3, 3]
-        mask = mask # [B, H, W]
+    def __compute_gt(keypoints_0, keypoints_1, warp, mask, px_thresh):
+        """
+        keypoints_0: [B, M0, 2]  на Img
+        keypoints_1: [B, N0, 2]  на Res
+        warp:        [B, 1, 3, 3] или [B, 3, 3]  гомография Img->Res
+        mask:        [B, H, W]    валидные пиксели на Res
+        """
+        import kornia as K
 
-        pass #TODO
+        if warp.dim() == 4:
+            warp = warp[:, 0]   # [B,3,3]
+
+        B = keypoints_0.shape[0]
+        gt_assignment_list = []
+        gt_matches0_list = []
+        gt_matches1_list = []
+
+        for b in range(B):
+            kps0 = keypoints_0[b]          # [M0, 2]
+            kps1 = keypoints_1[b]          # [N0, 2]
+            H    = warp[b].squeeze()       # [3, 3]
+            V    = mask[b].squeeze()       # [H, W]
+
+            if V.ndim == 3:
+                V = V.squeeze(0)           # [H,W]
+
+            V_H, V_W = V.shape
+
+            # формат для Kornia: [B,N,2] -> [B,N,2]
+            pts_src = kps0.unsqueeze(0).to(H.device)     # [1,M0,2]
+            H_batch = H.unsqueeze(0)                     # [1,3,3]
+            kps0_proj = K.geometry.transform_points(H_batch, pts_src)[0]  # [M0,2][web:2]
+
+            x = kps0_proj[:, 0]
+            y = kps0_proj[:, 1]
+
+            in_bounds = (x >= 0) & (x < V_W) & (y >= 0) & (y < V_H)
+            valid = in_bounds.clone()
+
+            if in_bounds.any():
+                xi = x[in_bounds].long()
+                yi = y[in_bounds].long()
+                mask_valid = V[yi, xi] > 0.5
+                valid[in_bounds] = mask_valid
+
+            kps0_proj_valid = kps0_proj[valid]                  # [M_valid,2]
+            idx0_valid = torch.nonzero(valid, as_tuple=False).squeeze(1)
+
+            M0 = kps0.shape[0]
+            N0 = kps1.shape[0]
+            gt_matches0 = torch.full((M0,), -1, device=kps0.device, dtype=torch.long)
+            gt_matches1 = torch.full((N0,), -1, device=kps0.device, dtype=torch.long)
+            gt_assignment = torch.zeros((M0, N0), device=kps0.device, dtype=torch.float32)
+
+            if kps0_proj_valid.numel() == 0 or N0 == 0:
+                gt_assignment_list.append(gt_assignment)
+                gt_matches0_list.append(gt_matches0)
+                gt_matches1_list.append(gt_matches1)
+                continue
+
+            dx = kps0_proj_valid[:, None, :] - kps1[None, :, :]   # [M_valid,N0,2]
+            d2 = (dx ** 2).sum(-1)                                # [M_valid,N0]
+            min_d2, nn_j = d2.min(dim=1)                          # [M_valid]
+
+            good = min_d2.sqrt() < px_thresh
+            if good.sum() == 0:
+                gt_assignment_list.append(gt_assignment)
+                gt_matches0_list.append(gt_matches0)
+                gt_matches1_list.append(gt_matches1)
+                continue
+
+            k0_good = idx0_valid[good]        # [G]
+            k1_good = nn_j[good]              # [G]
+            distances = min_d2[good].sqrt()   # [G]
+
+            if len(k1_good) > 0:
+                best_mask = torch.zeros_like(k1_good, dtype=torch.bool)
+                unique_k1, inverse_indices = torch.unique(k1_good, return_inverse=True)
+
+                for uniq_idx in range(len(unique_k1)):
+                    matches_for_k1 = (inverse_indices == uniq_idx)
+                    if matches_for_k1.sum() > 0:
+                        best_idx_in_group = distances[matches_for_k1].argmin()
+                        global_idx = torch.nonzero(matches_for_k1, as_tuple=False)[best_idx_in_group].item()
+                        best_mask[global_idx] = True
+
+                k0_good = k0_good[best_mask]
+                k1_good = k1_good[best_mask]
+
+            gt_matches0[k0_good] = k1_good
+            gt_matches1[k1_good] = k0_good
+            gt_assignment[k0_good, k1_good] = 1.0
+
+            gt_assignment_list.append(gt_assignment)
+            gt_matches0_list.append(gt_matches0)
+            gt_matches1_list.append(gt_matches1)
+
+        gt = {
+            "gt_assignment": torch.stack(gt_assignment_list, dim=0),
+            "gt_matches0": torch.stack(gt_matches0_list, dim=0),
+            "gt_matches1": torch.stack(gt_matches1_list, dim=0),
+        }
+        return gt
 
     def __collect_xfeat_to_batch(xfeat_output, W, H, B):
         kps = []
